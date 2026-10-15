@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>מחשבון פוקר פשוט</title>
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700;800&display=swap');
+        body {
+            font-family: 'Rubik', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+    </style>
+</head>
+<body class="min-h-screen pb-12">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function SimplePokerApp() {
+            // סכום כניסה ברירת מחדל
+            const [defaultBuyIn, setDefaultBuyIn] = useState(() => {
+                const saved = localStorage.getItem('simple_poker_buyin');
+                return saved ? parseFloat(saved) : 50;
+            });
+
+            // רשימת שחקנים
+            const [players, setPlayers] = useState(() => {
+                const saved = localStorage.getItem('simple_poker_players');
+                return saved ? JSON.parse(saved) : [];
+            });
+
+            const [newPlayerName, setNewPlayerName] = useState('');
+            const [showResults, setShowResults] = useState(false);
+            const [settlements, setSettlements] = useState([]);
+
+            useEffect(() => {
+                localStorage.setItem('simple_poker_buyin', defaultBuyIn);
+            }, [defaultBuyIn]);
+
+            useEffect(() => {
+                localStorage.setItem('simple_poker_players', JSON.stringify(players));
+            }, [players]);
+
+            // הוספת שחקן
+            const handleAddPlayer = (e) => {
+                e.preventDefault();
+                if (!newPlayerName.trim()) return;
+
+                if (players.some(p => p.name.trim() === newPlayerName.trim())) {
+                    alert('שחקן בשם זה כבר קיים בשולחן!');
+                    return;
+                }
+
+                const newPlayer = {
+                    id: Date.now(),
+                    name: newPlayerName.trim(),
+                    totalInvested: defaultBuyIn,
+                    rebuysCount: 0,
+                    finalCash: 0
+                };
+
+                setPlayers([...players, newPlayer]);
+                setNewPlayerName('');
+            };
+
+            // הוספת כסף (Rebuy)
+            const handleAddMoney = (playerId, amount) => {
+                setPlayers(players.map(p => {
+                    if (p.id === playerId) {
+                        return {
+                            ...p,
+                            totalInvested: p.totalInvested + amount,
+                            rebuysCount: p.rebuysCount + 1
+                        };
+                    }
+                    return p;
+                }));
+            };
+
+            // עדכון כמה כסף נשאר בסוף
+            const handleUpdateFinalCash = (playerId, value) => {
+                const val = parseFloat(value) || 0;
+                setPlayers(players.map(p => p.id === playerId ? { ...p, finalCash: val } : p));
+            };
+
+            // מחיקת שחקן
+            const handleDeletePlayer = (id) => {
+                if (confirm('למחוק את השחקן?')) {
+                    setPlayers(players.filter(p => p.id !== id));
+                }
+            };
+
+            // איפוס המשחק
+            const handleResetGame = () => {
+                if (confirm('להתחיל משחק חדש ולאפס את הנתונים?')) {
+                    setPlayers([]);
+                    setShowResults(false);
+                    setSettlements([]);
+                }
+            };
+
+            // חישוב סך הכל קופה
+            const totalPot = players.reduce((sum, p) => sum + p.totalInvested, 0);
+            const totalOut = players.reduce((sum, p) => sum + p.finalCash, 0);
+            const diff = totalOut - totalPot;
+
+            // אלגוריתם חישוב מי מעביר למי וכמה
+            const calculateSettlement = () => {
+                const balances = players.map(p => ({
+                    name: p.name,
+                    net: p.finalCash - p.totalInvested
+                }));
+
+                const debtors = balances.filter(b => b.net < -0.01).map(b => ({ ...b, amount: -b.net }));
+                const creditors = balances.filter(b => b.net > 0.01).map(b => ({ ...b, amount: b.net }));
+
+                debtors.sort((a, b) => b.amount - a.amount);
+                creditors.sort((a, b) => b.amount - a.amount);
+
+                const transactions = [];
+                let i = 0, j = 0;
+
+                while (i < debtors.length && j < creditors.length) {
+                    const debtor = debtors[i];
+                    const creditor = creditors[j];
+                    const amount = Math.min(debtor.amount, creditor.amount);
+
+                    if (amount > 0.01) {
+                        transactions.push({
+                            from: debtor.name,
+                            to: creditor.name,
+                            amount: amount
+                        });
+                    }
+
+                    debtor.amount -= amount;
+                    creditor.amount -= amount;
+
+                    if (debtor.amount < 0.01) i++;
+                    if (creditor.amount < 0.01) j++;
+                }
+
+                setSettlements(transactions);
+                setShowResults(true);
+            };
+
+            // שיתוף ב-WhatsApp
+            const handleShareWhatsApp = () => {
+                let text = `♠️ *סיכום ערב פוקר* ♣️\n\n`;
+                text += `💰 *סה"כ קופה בקופונים/כסף:* ₪${totalPot}\n\n`;
+
+                text += `📊 *רווח / הפסד לכל שחקן:*\n`;
+                players.forEach(p => {
+                    const profit = p.finalCash - p.totalInvested;
+                    const status = profit > 0 ? `🟢 מורווח +₪${profit.toFixed(0)}` : profit < 0 ? `🔴 מופסד -₪${Math.abs(profit).toFixed(0)}` : `⚪ מיושר (0 ₪)`;
+                    text += `• *${p.name}*: הכניס ₪${p.totalInvested} | יצא עם ₪${p.finalCash} 👈 ${status}\n`;
+                });
+
+                text += `\n📲 *מי מעביר למי:* \n`;
+                if (settlements.length === 0) {
+                    text += `אין העברות, כולם מאוזנים!\n`;
+                } else {
+                    settlements.forEach(t => {
+                        text += `👈 *${t.from}* מעביר/ה ל-*${t.to}*: *₪${t.amount.toFixed(0)}*\n`;
+                    });
+                }
+
+                const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+                window.open(url, '_blank');
+            };
+
+            return (
+                <div className="max-w-md mx-auto px-4 pt-6 space-y-5">
+                    {/* כותרת */}
+                    <div className="bg-slate-800 rounded-2xl p-5 border border-slate-700 text-center flex justify-between items-center">
+                        <div>
+                            <h1 className="text-2xl font-black text-amber-400">♠️ מחשבון פוקר</h1>
+                            <p className="text-xs text-slate-400 mt-1">חישוב כניסות, רווח/הפסד והעברות</p>
+                        </div>
+                        <button 
+                            onClick={handleResetGame}
+                            className="bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs font-bold px-3 py-2 rounded-xl transition border border-red-500/30"
+                        >
+                            🔄 חדש
+                        </button>
+                    </div>
+
+                    {/* הגדרת כניסה דיפולטיבית */}
+                    <div className="bg-slate-800/80 rounded-2xl p-4 border border-slate-700 flex justify-between items-center">
+                        <label className="text-xs font-medium text-slate-300">סכום כניסה רגיל (₪):</label>
+                        <input 
+                            type="number" 
+                            value={defaultBuyIn} 
+                            onChange={e => setDefaultBuyIn(parseFloat(e.target.value) || 0)}
+                            className="w-24 bg-slate-900 border border-slate-700 rounded-xl p-2 text-center text-amber-400 font-bold outline-none text-sm"
+                        />
+                    </div>
+
+                    {/* הוספת שחקן */}
+                    <form onSubmit={handleAddPlayer} className="flex gap-2">
+                        <input 
+                            type="text" 
+                            placeholder="שם השחקן..." 
+                            value={newPlayerName}
+                            onChange={e => setNewPlayerName(e.target.value)}
+                            className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 text-sm outline-none focus:border-emerald-500"
+                        />
+                        <button 
+                            type="submit"
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2.5 rounded-xl transition text-sm"
+                        >
+                            + הוסף
+                        </button>
+                    </form>
+
+                    {/* סיכום קופה כללי */}
+                    <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700 flex justify-around items-center text-center">
+                        <div>
+                            <p className="text-xs text-slate-400">שחקנים</p>
+                            <p className="text-lg font-bold text-white">{players.length}</p>
+                        </div>
+                        <div className="border-x border-slate-700 px-6">
+                            <p className="text-xs text-slate-400">סה"כ בקופה</p>
+                            <p className="text-2xl font-black text-emerald-400">₪{totalPot}</p>
+                        </div>
+                    </div>
+
+                    {/* רשימת שחקנים */}
+                    <div className="space-y-3">
+                        {players.map(player => {
+                            const profit = player.finalCash - player.totalInvested;
+                            return (
+                                <div key={player.id} className="bg-slate-800 rounded-2xl p-4 border border-slate-700 space-y-3">
+                                    {/* שורה ראשונה: שם, סה"כ כסף שנכנס, כפתור Rebuy */}
+                                    <div className="flex justify-between items-center">
+                                        <div>
+                                            <h3 className="font-bold text-white text-base">{player.name}</h3>
+                                            <p className="text-xs text-slate-400">
+                                                הכניס בכולל: <span className="text-amber-400 font-bold">₪{player.totalInvested}</span>
+                                            </p>
+                                        </div>
+
+                                        <div className="flex items-center gap-2">
+                                            <button 
+                                                onClick={() => handleAddMoney(player.id, defaultBuyIn)}
+                                                className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 text-xs font-bold px-3 py-1.5 rounded-xl transition"
+                                            >
+                                                +₪{defaultBuyIn}
+                                            </button>
+                                            <button 
+                                                onClick={() => handleDeletePlayer(player.id)}
+                                                className="text-slate-500 hover:text-red-400 p-1 text-xs"
+                                            >
+                                                🗑️
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* שורה שנייה: כמה כסף נשאר לו ביד */}
+                                    <div className="bg-slate-900/80 p-2.5 rounded-xl flex justify-between items-center gap-3">
+                                        <label className="text-xs text-slate-300 font-medium whitespace-nowrap">כסף שנשאר ביד (₪):</label>
+                                        <input 
+                                            type="number" 
+                                            placeholder="0"
+                                            value={player.finalCash || ''}
+                                            onChange={e => handleUpdateFinalCash(player.id, e.target.value)}
+                                            className="w-28 bg-slate-800 border border-slate-700 rounded-lg p-1.5 text-center text-white font-bold outline-none text-sm focus:border-emerald-400"
+                                        />
+                                    </div>
+
+                                    {/* תצוגת מורווח / מופסד בזמן אמת */}
+                                    {showResults && (
+                                        <div className={`p-2 rounded-xl text-center text-xs font-bold ${profit > 0 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : profit < 0 ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-slate-700 text-slate-300'}`}>
+                                            {profit > 0 ? `🟢 מורווח: +₪${profit.toFixed(0)}` : profit < 0 ? `🔴 מופסד: -₪${Math.abs(profit).toFixed(0)}` : `⚪ מיושר (0 ₪)`}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* כפתור חישוב */}
+                    {players.length > 0 && (
+                        <button 
+                            onClick={calculateSettlement}
+                            className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black py-3.5 rounded-2xl shadow-lg transition text-base"
+                        >
+                            🧮 חשב מי מעביר למי
+                        </button>
+                    )}
+
+                    {/* תוצאות והעברות */}
+                    {showResults && (
+                        <div className="bg-slate-800 rounded-2xl p-5 border border-amber-500/40 shadow-xl space-y-4">
+                            <div className="flex justify-between items-center border-b border-slate-700 pb-3">
+                                <h3 className="text-lg font-bold text-amber-400">💸 מי מעביר למי וכמה</h3>
+                                <button 
+                                    onClick={handleShareWhatsApp}
+                                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition"
+                                >
+                                    📲 שלח ב-WhatsApp
+                                </button>
+                            </div>
+
+                            {/* התראת חוסר איזון */}
+                            {Math.abs(diff) > 0.1 && (
+                                <div className="bg-red-500/20 border border-red-500/30 text-red-300 p-3 rounded-xl text-xs text-center">
+                                    ⚠️ <strong>הקופה לא מאוזנת:</strong> סך הכסף בידיים (₪{totalOut}) לא שווה לסך ההפקדות (₪{totalPot}). הפרש: ₪{Math.abs(diff)}
+                                </div>
+                            )}
+
+                            {/* רשימת העברות */}
+                            <div className="space-y-2">
+                                {settlements.length === 0 ? (
+                                    <p className="text-slate-400 text-xs text-center py-2">אין העברות! כולם יצאו מיושרים.</p>
+                                ) : (
+                                    settlements.map((t, idx) => (
+                                        <div key={idx} className="bg-slate-900 p-3 rounded-xl border border-slate-700 flex justify-between items-center text-sm">
+                                            <div>
+                                                <span className="text-red-400 font-bold">{t.from}</span>
+                                                <span className="text-slate-400 text-xs mx-1 font-normal">מעביר/ה ל-</span>
+                                                <span className="text-emerald-400 font-bold">{t.to}</span>
+                                            </div>
+                                            <span className="text-amber-400 font-black text-base">₪{t.amount.toFixed(0)}</span>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<SimplePokerApp />);
+    </script>
+</body>
+</html>
